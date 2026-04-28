@@ -134,12 +134,28 @@ export function FundingSection({ sessionAddress }: FundingSectionProps) {
         <p className="text-[10px] text-black/30 mt-1">
           Used for executor fees, not gas. Deposit is for the session key address via depositFor().
         </p>
-        <div className="mt-2 text-[9px] text-black/30 font-mono space-y-0.5">
-          <div>balanceOf session key: {sessionShort}</div>
-          <div>session key balance: {walletBalanceFormatted.toFixed(4)} RITUAL</div>
-          <div>depositFor beneficiary: {sessionShort}</div>
-          <div>owner EOA RitualWallet: {address ? `${address.slice(0,6)}...${address.slice(-4)}` : "—"} = {ownerWalletFormatted.toFixed(4)} RITUAL</div>
-          <div>raw session key: {walletBalance.toString()} wei</div>
+        <div className="mt-2 text-[9px] font-mono space-y-0.5">
+          <div className={sessionAddress && walletBalance === 0n && ownerWalletBalance > 0n ? "text-red-500" : "text-black/30"}>
+            Current Session Key: {sessionShort}
+          </div>
+          <div className={sessionAddress && walletBalance > 0n ? "text-[#2F795A]" : "text-red-500"}>
+            Last Deposit Beneficiary: {walletBalance > 0n ? sessionShort : "0x... (no deposit found for session key)"}
+          </div>
+          <div className="text-black/30">
+            RitualWallet balance checked for: {sessionShort}
+          </div>
+          {ownerWalletBalance > 0n && walletBalance === 0n && (
+            <div className="text-red-500">
+              ⚠️ Owner EOA has {ownerWalletFormatted.toFixed(4)} RITUAL in RitualWallet, but session key has 0.
+              Make a new deposit to fund the current session key.
+            </div>
+          )}
+          {walletBalance > 0n && (
+            <div className="text-[#2F795A]">
+              ✅ Session key has {walletBalanceFormatted.toFixed(4)} RITUAL in RitualWallet
+            </div>
+          )}
+          <div className="text-black/30">raw session key wei: {walletBalance.toString()}</div>
         </div>
       </div>
     </div>
