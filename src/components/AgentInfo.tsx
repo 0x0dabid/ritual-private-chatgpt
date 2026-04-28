@@ -48,7 +48,7 @@ export function AgentInfo({
       <h3 className="text-sm font-semibold text-black mb-3">Account &amp; Agent</h3>
 
       <div className="space-y-2.5 text-xs">
-        <InfoRow label="Agent Type" value="Persistent Agent" />
+        <InfoRow label="Agent Type" value="App Agent" />
         <InfoRow label="Precompile" value="0x0000...0820" mono />
 
         {/* Account section */}
@@ -141,10 +141,10 @@ export function AgentInfo({
 
         <div className="pt-2 border-t border-black/5">
           <p className="text-[10px] text-black/40 leading-relaxed">
-            This agent runs on Ritual Chain using the Persistent Agent infrastructure.
+            This is an app-level agent managed through the ChatGPTAgent consumer contract.
             Chat messages are submitted through your smart account via an authorized session key.
             Full conversation history is stored locally. Only prompt hashes and job references
-            are recorded onchain.
+            are recorded onchain. The agent is not yet deployed through the official PersistentAgentFactory.
           </p>
         </div>
       </div>

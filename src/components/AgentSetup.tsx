@@ -34,7 +34,8 @@ export function AgentSetup({ agentStatus, onAgentAddress, smartAccountAddress }:
     if (!smartAccountAddress) return;
     setIsCreating(true);
     // In production, this deploys a Persistent Agent through the factory (0xD4AA9D...)
-    // and links it to the smart account via registerAgent()
+    // and links it to the smart account via registerAgent(). For now, metadata
+    // is stored in the ChatGPTAgent consumer contract as an "App Agent Registered" entry.
     const placeholderAddr = `0x${"2".repeat(40)}` as `0x${string}`;
     setTimeout(() => {
       onAgentAddress(placeholderAddr);
@@ -132,9 +133,9 @@ export function AgentSetup({ agentStatus, onAgentAddress, smartAccountAddress }:
               Deploying...
             </span>
           ) : isActive ? (
-            "Persistent Agent Active"
+            "App Agent Active"
           ) : (
-            "Create Persistent Agent"
+            "Register App Agent"
           )}
         </button>
       </div>

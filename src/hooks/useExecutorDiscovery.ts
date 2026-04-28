@@ -1,8 +1,16 @@
-import { useReadContract, useAccount } from "wagmi";
 import { type Address } from "viem";
-import { useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { createPublicClient, http } from "viem";
+import { ritualChain } from "@/lib/chain";
 
 const TEE_REGISTRY = "0x9644e8562cE0Fe12b4deeC4163c064A8862Bf47F" as const;
+const CAPABILITY_ID = { llm: 1 } as const;
+const RPC_URL = process.env.NEXT_PUBLIC_RITUAL_RPC_URL ?? "https://rpc.ritualfoundation.org";
+const MANUAL_EXECUTOR = process.env.NEXT_PUBLIC_MANUAL_LLM_EXECUTOR_ADDRESS as Address | undefined;
+
+// Known working executor on Ritual Testnet (confirmed via working tx)
+// Registry returns empty but this executor processes LLM calls successfully.
+const KNOWN_EXECUTOR = "0xdbd91abbc81e62ec68c6ee335426210b3a54f8ff" as Address;
 
 const registryAbi = [
   {
@@ -38,7 +46,19 @@ const registryAbi = [
   },
 ] as const;
 
-const CAPABILITY_ID = { llm: 1 } as const;
+interface RawService {
+  node: {
+    paymentAddress: string;
+    teeAddress: string;
+    teeType: number;
+    publicKey: string;
+    endpoint: string;
+    certPubKeyHash: string;
+    capability: number;
+  };
+  isValid: boolean;
+  workloadId: string;
+}
 
 export interface ExecutorInfo {
   teeAddress: Address;
@@ -52,50 +72,96 @@ export interface ExecutorInfo {
   capability: number;
 }
 
+export interface ExecutorDebugState {
+  rpcUrl: string;
+  chainId: number;
+  registryAddress: string;
+  capabilityId: number;
+  queryWithValidity: { status: string; rawCount: number; rawData: any };
+  queryWithoutValidity: { status: string; rawCount: number; rawData: any };
+  selectedExecutor: ExecutorInfo | null;
+  selectedIsValid: boolean;
+  workloadId: string;
+  publicKeyStatus: string;
+  error: string | null;
+  lastChecked: string;
+  manualOverrideActive: boolean;
+}
+
 export function useExecutorDiscovery() {
-  const { address } = useAccount();
+  const [servicesWithValidity, setServicesWithValidity] = useState<RawService[] | null>(null);
+  const [servicesWithoutValidity, setServicesWithoutValidity] = useState<RawService[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
+  const [lastChecked, setLastChecked] = useState<string>("");
 
-  // Step 1: Try with validity check first
-  const queryWithValidity = useReadContract({
-    address: TEE_REGISTRY,
-    abi: registryAbi,
-    functionName: "getServicesByCapability",
-    args: [CAPABILITY_ID.llm, true],
-    query: { enabled: !!address },
-  });
+  const fetchServices = useCallback(async () => {
+    setLoading(true);
+    setError(null);
 
-  // Step 2: If empty, try without validity check
-  const queryWithoutValidity = useReadContract({
-    address: TEE_REGISTRY,
-    abi: registryAbi,
-    functionName: "getServicesByCapability",
-    args: [CAPABILITY_ID.llm, false],
-    query: { enabled: !!address && queryWithValidity.isFetched && (queryWithValidity.data?.length ?? 0) === 0 },
-  });
+    try {
+      const client = createPublicClient({
+        chain: ritualChain,
+        transport: http(RPC_URL),
+      });
 
-  // Log raw results for debugging
+      const result1 = await client.readContract({
+        address: TEE_REGISTRY,
+        abi: registryAbi,
+        functionName: "getServicesByCapability",
+        args: [CAPABILITY_ID.llm, true],
+      }) as RawService[];
+
+      console.log("[ExecutorDiscovery] getServicesByCapability(1, true):", result1);
+      setServicesWithValidity(result1);
+
+      if (result1.length === 0) {
+        const result2 = await client.readContract({
+          address: TEE_REGISTRY,
+          abi: registryAbi,
+          functionName: "getServicesByCapability",
+          args: [CAPABILITY_ID.llm, false],
+        }) as RawService[];
+
+        console.log("[ExecutorDiscovery] getServicesByCapability(1, false):", result2);
+        setServicesWithoutValidity(result2);
+
+        if (result2.length === 0) {
+          console.warn("[ExecutorDiscovery] No LLM executor returned by TEEServiceRegistry (checked both true and false validity)");
+        }
+      } else {
+        setServicesWithoutValidity(null);
+      }
+    } catch (err) {
+      console.error("[ExecutorDiscovery] Error querying TEEServiceRegistry:", err);
+      setError(err instanceof Error ? err.message : "Failed to query registry");
+    } finally {
+      setLoading(false);
+      setLastChecked(new Date().toLocaleTimeString());
+    }
+  }, []);
+
   useEffect(() => {
-    if (queryWithValidity.data) {
-      console.log("[ExecutorDiscovery] getServicesByCapability(1, true):", queryWithValidity.data);
-    }
-    if (queryWithoutValidity.data) {
-      console.log("[ExecutorDiscovery] getServicesByCapability(1, false):", queryWithoutValidity.data);
-    }
-    if (queryWithValidity.isFetched && (queryWithValidity.data?.length ?? 0) === 0 && (queryWithoutValidity.data?.length ?? 0) === 0) {
-      console.warn("[ExecutorDiscovery] No LLM executor returned by TEEServiceRegistry (checked both true and false validity)");
-    }
-  }, [queryWithValidity.data, queryWithoutValidity.data, queryWithValidity.isFetched]);
+    fetchServices();
+  }, [fetchServices, retryCount]);
 
-  // Step 3: Pick best executor
-  const rawServices = (queryWithValidity.data?.length ?? 0) > 0
-    ? queryWithValidity.data
-    : queryWithoutValidity.data;
+  const retry = useCallback(() => setRetryCount((c) => c + 1), []);
+
+  const rawServices = (servicesWithValidity && servicesWithValidity.length > 0)
+    ? servicesWithValidity
+    : servicesWithoutValidity;
 
   const bestService = rawServices
-    ? (rawServices.find((s: any) => s.isValid) ?? rawServices[0] ?? null)
+    ? (rawServices.find((s) => s.isValid) ?? rawServices[0] ?? null)
     : null;
 
-  const executors: ExecutorInfo[] = (rawServices ?? []).map((s: any) => ({
+  const isManualOverride = !bestService && !!MANUAL_EXECUTOR;
+  const useKnownFallback = !bestService && !MANUAL_EXECUTOR;
+
+  const fallbackLabel = isManualOverride ? "Manual Override" : useKnownFallback ? "Known Fallback" : null;
+
+  const buildExecutor = (s: RawService): ExecutorInfo => ({
     teeAddress: s.node.teeAddress as Address,
     paymentAddress: s.node.paymentAddress as Address,
     publicKey: s.node.publicKey as `0x${string}`,
@@ -105,30 +171,71 @@ export function useExecutorDiscovery() {
     teeType: s.node.teeType,
     registry: "TEEServiceRegistry",
     capability: CAPABILITY_ID.llm,
-  }));
+  });
 
-  const isLoading = queryWithValidity.isLoading || queryWithoutValidity.isLoading;
-  const noServices = queryWithValidity.isFetched && (queryWithoutValidity.isFetched || !queryWithoutValidity.isEnabled) && !bestService;
+  const executor: ExecutorInfo | null = bestService
+    ? buildExecutor(bestService)
+    : isManualOverride
+    ? {
+        teeAddress: MANUAL_EXECUTOR as Address,
+        paymentAddress: "0x0000000000000000000000000000000000000000" as Address,
+        publicKey: "0x" as `0x${string}`,
+        publicKeyPresent: false,
+        isValid: false,
+        workloadId: "0x0000000000000000000000000000000000000000000000000000000000000000" as `0x${string}`,
+        teeType: 0,
+        registry: "Manual Override",
+        capability: CAPABILITY_ID.llm,
+      }
+    : useKnownFallback
+    ? {
+        teeAddress: KNOWN_EXECUTOR,
+        paymentAddress: "0x0000000000000000000000000000000000000000" as Address,
+        publicKey: "0x" as `0x${string}`,
+        publicKeyPresent: false,
+        isValid: false,
+        workloadId: "0x0000000000000000000000000000000000000000000000000000000000000000" as `0x${string}`,
+        teeType: 0,
+        registry: "Known Workaround (registry empty)",
+        capability: CAPABILITY_ID.llm,
+      }
+    : null;
+
+  const executors: ExecutorInfo[] = (rawServices ?? []).map(buildExecutor);
+
+  const debug: ExecutorDebugState = {
+    rpcUrl: RPC_URL,
+    chainId: ritualChain.id,
+    registryAddress: TEE_REGISTRY,
+    capabilityId: CAPABILITY_ID.llm,
+    queryWithValidity: {
+      status: servicesWithValidity === null ? "not checked" : `done (${servicesWithValidity.length} services)`,
+      rawCount: servicesWithValidity?.length ?? 0,
+      rawData: servicesWithValidity,
+    },
+    queryWithoutValidity: {
+      status: servicesWithoutValidity === null ? "not checked" : `done (${servicesWithoutValidity.length} services)`,
+      rawCount: servicesWithoutValidity?.length ?? 0,
+      rawData: servicesWithoutValidity,
+    },
+    selectedExecutor: executor,
+    selectedIsValid: executor?.isValid ?? false,
+    workloadId: executor?.workloadId ?? "none",
+    publicKeyStatus: executor?.publicKeyPresent ? "present" : "missing",
+    error,
+    lastChecked,
+    manualOverrideActive: isManualOverride,
+  };
 
   return {
+    executor,
     executors,
-    executor: bestService
-      ? {
-          teeAddress: bestService.node.teeAddress as Address,
-          paymentAddress: bestService.node.paymentAddress as Address,
-          publicKey: bestService.node.publicKey as `0x${string}`,
-          publicKeyPresent: (bestService.node.publicKey as `0x${string}`).length > 2,
-          isValid: bestService.isValid,
-          workloadId: bestService.workloadId as `0x${string}`,
-          teeType: bestService.node.teeType,
-          registry: "TEEServiceRegistry",
-          capability: CAPABILITY_ID.llm,
-        }
-      : null,
-    isLoading,
-    noServices,
-    checkedWithValidity: queryWithValidity.isFetched,
-    checkedWithoutValidity: queryWithoutValidity.isFetched || !queryWithoutValidity.isEnabled,
-    rawServices,
+    isLoading: loading,
+    noServices: !loading && !error && !bestService && !isManualOverride && !useKnownFallback,
+    isManualOverride,
+    useKnownFallback,
+    error,
+    retry,
+    debug,
   };
 }

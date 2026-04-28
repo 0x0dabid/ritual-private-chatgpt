@@ -95,12 +95,12 @@ export default function Home() {
                 </h2>
                 <p className="text-black/50 text-sm mb-6 max-w-md mx-auto leading-relaxed">
                   Simple text-only AI chat powered by Ritual Testnet agents.
-                  Connect your wallet to create your own persistent onchain AI assistant
+                  Connect your wallet to create your own onchain AI assistant
                   with session-authorized chat.
                 </p>
                 <WalletConnect />
                 <div className="mt-8 grid grid-cols-3 gap-4 max-w-lg mx-auto">
-                  <FeatureCard icon="🤖" title="Persistent Agent" desc="Long-lived onchain AI with memory" />
+                  <FeatureCard icon="🤖" title="App Agent" desc="Onchain AI linked to your smart account" />
                   <FeatureCard icon="🔑" title="Session Keys" desc="One signature, unlimited messages" />
                   <FeatureCard icon="🔒" title="TEE Verified" desc="All processing in secure enclaves" />
                 </div>
