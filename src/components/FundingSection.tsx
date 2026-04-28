@@ -19,6 +19,8 @@ export function FundingSection({ sessionAddress }: FundingSectionProps) {
   const { balanceFormatted: gasBalanceFormatted, hasBalance, refresh: refreshGas } = useSessionKeyBalance();
   const { deposit, depositFor, isPending: isDepositing } = useRitualWalletDeposit();
   const { balance: walletBalance, balanceFormatted: walletBalanceFormatted, refetch: refetchWallet } = useRitualWalletBalance(sessionAddress ?? undefined);
+  // Also check owner EOA balance (from old deposit() calls before depositFor was added)
+  const { balance: ownerWalletBalance, balanceFormatted: ownerWalletFormatted } = useRitualWalletBalance(address ?? undefined);
   const [fundMsg, setFundMsg] = useState<string | null>(null);
 
   const handleFundGas = async () => {
@@ -133,9 +135,11 @@ export function FundingSection({ sessionAddress }: FundingSectionProps) {
           Used for executor fees, not gas. Deposit is for the session key address via depositFor().
         </p>
         <div className="mt-2 text-[9px] text-black/30 font-mono space-y-0.5">
-          <div>balanceOf target: {sessionShort}</div>
+          <div>balanceOf session key: {sessionShort}</div>
+          <div>session key balance: {walletBalanceFormatted.toFixed(4)} RITUAL</div>
           <div>depositFor beneficiary: {sessionShort}</div>
-          <div>raw balance: {walletBalance.toString()} wei</div>
+          <div>owner EOA RitualWallet: {address ? `${address.slice(0,6)}...${address.slice(-4)}` : "—"} = {ownerWalletFormatted.toFixed(4)} RITUAL</div>
+          <div>raw session key: {walletBalance.toString()} wei</div>
         </div>
       </div>
     </div>
