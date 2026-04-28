@@ -15,9 +15,6 @@ export function useDeploySmartAccount() {
 
   const deploy = useCallback(async (): Promise<Hash> => {
     if (!address) throw new Error("Wallet not connected");
-    if (SMART_ACCOUNT_FACTORY === "0x0000000000000000000000000000000000000000") {
-      throw new Error("SmartAccountFactory not deployed yet.");
-    }
     const hash = await writeContractAsync({
       address: SMART_ACCOUNT_FACTORY,
       abi: smartAccountFactoryAbi,
