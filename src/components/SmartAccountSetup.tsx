@@ -85,46 +85,49 @@ export function SmartAccountSetup({
     );
   }
 
+  const loading = predictedAddress === undefined;
+
   return (
     <div className="bg-white/60 backdrop-blur-sm rounded-2xl p-4 shadow-sm border border-black/5 space-y-3">
       <h3 className="text-sm font-semibold text-black">Smart Account</h3>
 
       <div className="flex items-center justify-between">
         <span className="text-xs text-black/50">Predicted Address</span>
-        <span className="text-xs font-mono text-black">{short(predictedAddress)}</span>
+        <span className="text-xs font-mono text-black">
+          {loading ? "..." : short(predictedAddress)}
+        </span>
       </div>
 
       <div className="bg-white/40 rounded-xl p-3 border border-black/5">
         <div className="flex items-center justify-between mb-2">
           <span className="text-[11px] font-semibold text-black/60">Deployment Status</span>
           <span className={`text-[11px] font-medium flex items-center gap-1 ${
-            isDeployed ? "text-[#2F795A]" : "text-red-500"
+            loading ? "text-black/30" : isDeployed ? "text-[#2F795A]" : "text-red-500"
           }`}>
-            {isDeployed ? (
+            {loading ? "Loading..." : isDeployed ? (
               <><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>Deployed</>
             ) : txPending ? (
               <span className="text-amber-600">Confirming...</span>
-            ) : (
-              "Not deployed"
-            )}
+            ) : "Not deployed"}
           </span>
         </div>
 
-        {!isDeployed && predictedAddress && (
+        {/* Always show deploy button when not deployed — regardless of loading state */}
+        {!isDeployed && (
           <div>
             <p className="text-[10px] text-black/40 mb-2">
-              Deploy a SmartAccount owned by your wallet. This enables
-              session-based execution through the account abstraction path.
+              Deploy a SmartAccount contract owned by your wallet
+              ({short(userAddress)}). This allows session-based execution.
             </p>
             <button
               onClick={handleDeploy}
-              disabled={isDeploying || txPending}
+              disabled={isDeploying || txPending || loading}
               className="w-full py-2 bg-[#2F795A] text-white rounded-xl text-xs font-medium
                          hover:bg-[#256F4E] transition-colors disabled:opacity-40"
             >
-              {txPending ? "Waiting for confirmation..." : isDeploying ? "Submitting..." : "Deploy Smart Account"}
+              {loading ? "Loading factory address..." : txPending ? "Waiting for confirmation..." : isDeploying ? "Submitting..." : "Deploy Smart Account"}
             </button>
             {deployMsg && (
               <p className={`text-[10px] mt-1.5 ${deployMsg.includes("failed") ? "text-red-500" : deployMsg.includes("Deployed") ? "text-[#2F795A]" : "text-amber-600"}`}>
@@ -141,6 +144,7 @@ export function SmartAccountSetup({
         )}
       </div>
 
+      {/* Session Authorization — only when deployed */}
       {isDeployed && predictedAddress && (
         <div className="bg-white/40 rounded-xl p-3 border border-black/5">
           <div className="flex items-center justify-between mb-2">
@@ -172,15 +176,13 @@ export function SmartAccountSetup({
           )}
 
           {isAuthorized && (
-            <p className="text-[10px] text-black/40">Session key is authorized.</p>
+            <p className="text-[10px] text-black/40">Session key is authorized to execute through the SmartAccount.</p>
+          )}
+
+          {!sessionAddress && (
+            <p className="text-[10px] text-black/30">Session key not generated yet. Refresh the page.</p>
           )}
         </div>
-      )}
-
-      {!predictedAddress && (
-        <p className="text-[10px] text-amber-600">
-          SmartAccountFactory address not configured in .env.local
-        </p>
       )}
     </div>
   );
