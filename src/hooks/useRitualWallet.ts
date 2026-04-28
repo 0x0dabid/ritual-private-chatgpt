@@ -44,7 +44,7 @@ export function useRitualWalletBalance(targetAddress: Address | undefined) {
     abi: RITUAL_WALLET_ABI,
     functionName: "balanceOf",
     args: targetAddress ? [targetAddress] : undefined,
-    query: { enabled: !!targetAddress, refetchInterval: 12_000 },
+    query: { enabled: !!targetAddress, refetchInterval: 5_000 },
   });
 
   const { data: lockUntilBlock } = useReadContract({

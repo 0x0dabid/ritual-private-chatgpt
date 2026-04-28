@@ -26,18 +26,14 @@ export const ASYNC_JOB_TRACKER =
 export const TEE_SERVICE_REGISTRY =
   "0x9644e8562cE0Fe12b4deeC4163c064A8862Bf47F" as const;
 
-/// @dev Deployed ChatGPTAgent consumer contract address.
-///      Set via env var, falls back to zero address.
-export const CONSUMER_CONTRACT_ADDRESS: `0x${string}` = (
-  typeof process !== "undefined"
-    ? (process.env.NEXT_PUBLIC_CONSUMER_CONTRACT as `0x${string}`)
-    : undefined
-) ?? ("0x0000000000000000000000000000000000000000" as const);
-
-/// @dev SmartAccountFactory address. Set after deploying Deploy.s.sol.
+/// @dev SmartAccountFactory — already deployed on Ritual Testnet.
 ///      Users deploy SmartAccounts through this factory.
-export const SMART_ACCOUNT_FACTORY: `0x${string}` = (
-  typeof process !== "undefined"
-    ? (process.env.NEXT_PUBLIC_SMART_ACCOUNT_FACTORY as `0x${string}`)
-    : undefined
-) ?? ("0x0000000000000000000000000000000000000000" as const);
+export const SMART_ACCOUNT_FACTORY: `0x${string}` =
+  (typeof process !== "undefined" && process.env.NEXT_PUBLIC_SMART_ACCOUNT_FACTORY) as `0x${string}`
+  ?? "0xd3C70a0f35a530cC64153F8c0d47Fca7003a73F9" as const;
+
+/// @dev Deployed ChatGPTAgent consumer contract address.
+///      Already deployed on Ritual Testnet.
+export const CONSUMER_CONTRACT_ADDRESS: `0x${string}` =
+  (typeof process !== "undefined" && process.env.NEXT_PUBLIC_CONSUMER_CONTRACT) as `0x${string}`
+  ?? "0x0383b95E6D895bb00c8f9AE1b6f67116b1EbcC4F" as const;

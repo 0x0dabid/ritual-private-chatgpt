@@ -39,6 +39,7 @@ export function FundingSection({
     balance: walletBalance,
     balanceFormatted: walletBalanceFormatted,
     refetch: refetchWallet,
+    lockUntilBlock,
   } = useRitualWalletBalance(sessionAddress ?? undefined);
   // Also check owner EOA balance (from old deposit() calls before depositFor was added)
   const {
@@ -148,7 +149,7 @@ export function FundingSection({
       <div className="bg-white/40 rounded-xl p-3 space-y-1.5 border border-black/5">
         <div className="flex items-center justify-between">
           <span className="text-[11px] font-semibold text-black/60">RitualWallet Escrow</span>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-2">
             <div
               className={`w-1.5 h-1.5 rounded-full ${
                 walletBalance > 0n ? "bg-[#2F795A]" : "bg-black/20"
@@ -158,6 +159,15 @@ export function FundingSection({
               {walletBalanceFormatted.toFixed(4)}
             </span>
             <span className="text-[10px] text-black/40">RITUAL</span>
+            {lockUntilBlock > 0 && (
+              <span className="text-[9px] text-black/30">locked to block {lockUntilBlock}</span>
+            )}
+            <button
+              onClick={() => refetchWallet()}
+              className="text-[9px] text-[#2F795A] hover:text-[#256F4E] underline"
+            >
+              refresh
+            </button>
           </div>
         </div>
         <p className="text-[10px] text-black/30">
