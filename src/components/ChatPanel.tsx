@@ -8,7 +8,7 @@ import { keccak256, toHex } from "viem";
 import { useChatStore } from "@/stores/chatStore";
 import { useSessionKey } from "@/hooks/useSessionKey";
 import { useSessionKeyBalance } from "@/hooks/useSessionKeyBalance";
-import { submitLLMThroughSmartAccount } from "@/hooks/useLLMCall";
+import { submitDirectLLM, submitViaSmartAccount } from "@/hooks/useLLMCall";
 import { useExecutorDiscovery } from "@/hooks/useExecutorDiscovery";
 
 interface ChatPanelProps {
@@ -21,6 +21,7 @@ export function ChatPanel({ agentStatus, smartAccountAddress }: ChatPanelProps) 
   const [isSending, setIsSending] = useState(false);
   const [showErrorDetail, setShowErrorDetail] = useState(false);
   const [errorDetail, setErrorDetail] = useState("");
+  const [llmMode, setLlmMode] = useState<"direct" | "smart-account">("direct");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { messages, addMessage, updateMessage } = useChatStore();
   const { sessionAccount } = useSessionKey();
@@ -52,16 +53,21 @@ export function ChatPanel({ agentStatus, smartAccountAddress }: ChatPanelProps) 
         { role: "user", content: promptText },
       ];
 
-      const { response } = await submitLLMThroughSmartAccount(
-        sessionAccount,
-        smartAccountAddress,
-        { executor: executor.teeAddress, messages, model: "zai-org/GLM-4.7-FP8", temperature: 0.7, maxTokens: 4096, ttl: 300n },
-      );
+      let response;
+      if (llmMode === "direct") {
+        response = await submitDirectLLM(sessionAccount, {
+          executor: executor.teeAddress, messages, model: "zai-org/GLM-4.7-FP8", temperature: 0.7, maxTokens: 4096, ttl: 300n,
+        });
+      } else {
+        response = await submitViaSmartAccount(sessionAccount, smartAccountAddress, {
+          executor: executor.teeAddress, messages, model: "zai-org/GLM-4.7-FP8", temperature: 0.7, maxTokens: 4096, ttl: 300n,
+        });
+      }
 
-      if (!response.hasError && response.content) {
-        updateMessage(assistantId, { content: response.content, status: "delivered" });
-      } else if (response.hasError) {
-        updateMessage(assistantId, { content: `LLM error: ${response.errorMessage || "Unknown error"}`, status: "delivered" });
+      if (!response.response.hasError && response.response.content) {
+        updateMessage(assistantId, { content: response.response.content, status: "delivered" });
+      } else if (response.response.hasError) {
+        updateMessage(assistantId, { content: `LLM error: ${response.response.errorMessage || "Unknown error"}`, status: "delivered" });
       } else {
         updateMessage(assistantId, { content: "Empty response received.", status: "delivered" });
       }
@@ -94,15 +100,33 @@ export function ChatPanel({ agentStatus, smartAccountAddress }: ChatPanelProps) 
             </div>
           )}
         </div>
-        {isSending && (
-          <div className="flex items-center gap-1.5 text-xs text-amber-600">
-            <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
-            Sending...
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          {executor && (
+            <label className="flex items-center gap-1 text-[10px] text-black/40 cursor-pointer">
+              <span className={llmMode === "direct" ? "text-[#2F795A] font-medium" : ""}>Direct</span>
+              <button
+                onClick={() => setLlmMode(llmMode === "direct" ? "smart-account" : "direct")}
+                className={`relative w-7 h-3.5 rounded-full transition-colors ${
+                  llmMode === "direct" ? "bg-[#2F795A]" : "bg-black/20"
+                }`}
+              >
+                <div className={`absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white transition-transform ${
+                  llmMode === "direct" ? "translate-x-0.5" : "translate-x-3.5"
+                }`} />
+              </button>
+              <span className={llmMode === "smart-account" ? "text-[#2F795A] font-medium" : ""}>SA</span>
+            </label>
+          )}
+          {isSending && (
+            <div className="flex items-center gap-1.5 text-xs text-amber-600">
+              <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              Sending...
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Messages */}
@@ -136,7 +160,6 @@ export function ChatPanel({ agentStatus, smartAccountAddress }: ChatPanelProps) 
         ))}
         <div ref={messagesEndRef} />
 
-        {/* Error detail behind toggle */}
         {errorDetail && (
           <details className="text-xs" onClick={(e) => e.stopPropagation()}>
             <summary
@@ -152,19 +175,16 @@ export function ChatPanel({ agentStatus, smartAccountAddress }: ChatPanelProps) 
         )}
       </div>
 
-      {/* Privacy warning */}
       <div className="px-4 py-1.5 text-[10px] text-black/30 border-t border-black/5 bg-white/40 text-center">
         Only prompt hashes are stored onchain. Full messages stay local.
       </div>
 
-      {/* Gas warning */}
       {needsGas && (
         <div className="px-4 py-1.5 text-[10px] text-amber-600 bg-amber-50 border-t border-amber-100 text-center">
           Your session key needs native RITUAL for gas. Use the Funding section to send some.
         </div>
       )}
 
-      {/* Input */}
       <div className="px-4 py-3 border-t border-black/5">
         <div className="flex gap-2">
           <input
