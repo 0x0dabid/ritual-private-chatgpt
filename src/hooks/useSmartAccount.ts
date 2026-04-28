@@ -1,56 +1,32 @@
 import { useCallback, useState } from "react";
 import { useAccount, useWriteContract, useReadContract, useWaitForTransactionReceipt } from "wagmi";
-import { decodeEventLog, type Address, type Hash, type Log } from "viem";
+import { type Address, type Hash } from "viem";
 import { smartAccountAbi, smartAccountFactoryAbi } from "@/lib/abi";
 import { SMART_ACCOUNT_FACTORY } from "@/lib/addresses";
 
 export function useDeploySmartAccount() {
   const { address } = useAccount();
   const { writeContractAsync, isPending, data: deployHash } = useWriteContract();
-  const [deployedAddr, setDeployedAddr] = useState<Address | null>(null);
 
   const { isLoading: isConfirming } = useWaitForTransactionReceipt({
     hash: deployHash,
     query: { enabled: !!deployHash },
   });
 
-  // Parse the event from the receipt when confirmed
-  const { data: receipt } = useWaitForTransactionReceipt({
-    hash: deployHash,
-    query: { enabled: !!deployHash },
-  });
-
-  if (receipt && !deployedAddr) {
-    for (const log of receipt.logs) {
-      try {
-        const decoded = decodeEventLog({
-          abi: smartAccountFactoryAbi,
-          data: log.data,
-          topics: log.topics,
-        });
-        if (decoded.eventName === "SmartAccountDeployed") {
-          const saAddr = (decoded.args as any).smartAccount as Address;
-          if (saAddr) setDeployedAddr(saAddr);
-        }
-      } catch { /* skip non-matching logs */ }
-    }
-  }
-
-  const deploy = useCallback(async (): Promise<Address | null> => {
+  const deploy = useCallback(async (): Promise<Hash> => {
     if (!address) throw new Error("Wallet not connected");
     if (SMART_ACCOUNT_FACTORY === "0x0000000000000000000000000000000000000000") {
-      throw new Error("SmartAccountFactory not deployed yet. Run forge script first.");
+      throw new Error("SmartAccountFactory not deployed yet.");
     }
-    setDeployedAddr(null);
-    await writeContractAsync({
+    const hash = await writeContractAsync({
       address: SMART_ACCOUNT_FACTORY,
       abi: smartAccountFactoryAbi,
       functionName: "deploy",
     });
-    return null; // Will be set via event parsing
+    return hash;
   }, [address, writeContractAsync]);
 
-  return { deploy, isDeploying: isPending || isConfirming, deployHash: deployHash as Hash | undefined, deployedAddr };
+  return { deploy, isDeploying: isPending || isConfirming, deployHash: deployHash as Hash | undefined };
 }
 
 export function usePredictSmartAccount(owner: Address | undefined) {
@@ -59,20 +35,20 @@ export function usePredictSmartAccount(owner: Address | undefined) {
     abi: smartAccountFactoryAbi,
     functionName: "predictAddress",
     args: owner ? [owner] : undefined,
-    query: { enabled: !!owner && SMART_ACCOUNT_FACTORY !== "0x0000000000000000000000000000000000000000" },
+    query: { enabled: !!owner },
   });
   return { predictedAddress: predictedAddress as Address | undefined };
 }
 
 export function useIsSmartAccountDeployed(owner: Address | undefined) {
-  const { data: isDeployed } = useReadContract({
+  const { data: isDeployed, refetch } = useReadContract({
     address: SMART_ACCOUNT_FACTORY,
     abi: smartAccountFactoryAbi,
     functionName: "isDeployed",
     args: owner ? [owner] : undefined,
-    query: { enabled: !!owner && SMART_ACCOUNT_FACTORY !== "0x0000000000000000000000000000000000000000" },
+    query: { enabled: !!owner },
   });
-  return { isDeployed: isDeployed as boolean | undefined };
+  return { isDeployed: isDeployed as boolean | undefined, refetch };
 }
 
 export function useSmartAccountInfo(smartAccountAddress: Address | undefined) {

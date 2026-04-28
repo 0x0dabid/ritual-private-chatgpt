@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import type { Address } from "viem";
 import { useAccount } from "wagmi";
 import { usePredictSmartAccount, useIsSmartAccountDeployed, useDeploySmartAccount } from "@/hooks/useSmartAccount";
@@ -12,31 +12,51 @@ interface SmartAccountSetupProps {
 export function SmartAccountSetup({ onSmartAccountDeployed }: SmartAccountSetupProps) {
   const { address: userAddress, isConnected } = useAccount();
   const { predictedAddress } = usePredictSmartAccount(userAddress);
-  const { isDeployed } = useIsSmartAccountDeployed(userAddress);
-  const { deploy, isDeploying, deployedAddr, deployHash } = useDeploySmartAccount();
+  const { isDeployed, refetch: refetchDeployed } = useIsSmartAccountDeployed(userAddress);
+  const { deploy, isDeploying, deployHash } = useDeploySmartAccount();
   const [deployMsg, setDeployMsg] = useState<string | null>(null);
   const [txPending, setTxPending] = useState(false);
+  const notifiedRef = useRef(false);
 
+  // When deploy tx submitted, start polling isDeployed
   useEffect(() => {
     if (deployHash) {
       setTxPending(true);
-      setDeployMsg("Transaction submitted. Waiting for confirmation...");
-    }
-  }, [deployHash]);
+      setDeployMsg("Transaction submitted. Checking deployment status...");
 
+      // Poll isDeployed every 3 seconds until it returns true
+      const interval = setInterval(async () => {
+        const result = await refetchDeployed();
+        if (result.data === true) {
+          clearInterval(interval);
+          setTxPending(false);
+          setDeployMsg("Smart Account deployed!");
+        }
+      }, 3000);
+
+      // Safety: stop polling after 2 minutes
+      setTimeout(() => clearInterval(interval), 120000);
+
+      return () => clearInterval(interval);
+    }
+  }, [deployHash, refetchDeployed]);
+
+  // When isDeployed flips to true (from polling or onchain refresh), notify parent
   useEffect(() => {
-    if (deployedAddr) {
+    if (isDeployed && predictedAddress && !notifiedRef.current) {
+      notifiedRef.current = true;
       setTxPending(false);
-      setDeployMsg("Deployed!");
-      onSmartAccountDeployed(deployedAddr);
-    }
-  }, [deployedAddr, onSmartAccountDeployed]);
-
-  useEffect(() => {
-    if (isDeployed && predictedAddress && !deployedAddr) {
+      setDeployMsg("Smart Account deployed!");
       onSmartAccountDeployed(predictedAddress);
     }
-  }, [isDeployed, predictedAddress, deployedAddr, onSmartAccountDeployed]);
+  }, [isDeployed, predictedAddress, onSmartAccountDeployed]);
+
+  // Reset notification flag when deploy starts
+  useEffect(() => {
+    if (deployHash) {
+      notifiedRef.current = false;
+    }
+  }, [deployHash]);
 
   const handleDeploy = async () => {
     setDeployMsg(null);
@@ -68,13 +88,13 @@ export function SmartAccountSetup({ onSmartAccountDeployed }: SmartAccountSetupP
       <div className="bg-white/40 rounded-xl p-3 border border-black/5">
         <div className="flex items-center justify-between mb-2">
           <span className="text-[11px] font-semibold text-black/60">Status</span>
-          <span className={`text-[11px] font-medium ${isDeployed ? "text-[#2F795A]" : "text-red-500"}`}>
-            {isDeployed ? "Deployed" : txPending ? "Confirming..." : "Not deployed"}
+          <span className={`text-[11px] font-medium ${isDeployed ? "text-[#2F795A]" : txPending ? "text-amber-600" : "text-red-500"}`}>
+            {isDeployed ? "✅ Deployed" : txPending ? "⏳ Deploying..." : "Not deployed"}
           </span>
         </div>
         {predictedAddress && (
           <div className="flex items-center justify-between text-[10px]">
-            <span className="text-black/40">Address (deterministic)</span>
+            <span className="text-black/40">Address</span>
             <span className="font-mono text-black/60">{short(predictedAddress)}</span>
           </div>
         )}
@@ -82,8 +102,8 @@ export function SmartAccountSetup({ onSmartAccountDeployed }: SmartAccountSetupP
         {!isDeployed && (
           <div className="mt-3">
             <p className="text-[10px] text-black/40 mb-2">
-              Your permanent onchain wallet on Ritual. Deploy once — this is the wallet that
-              sends LLM transactions and holds the RitualWallet deposit.
+              Your permanent onchain wallet on Ritual. Deploy once — this is the wallet
+              that sends LLM transactions and holds the RitualWallet deposit.
             </p>
             <button
               onClick={handleDeploy}
@@ -94,10 +114,20 @@ export function SmartAccountSetup({ onSmartAccountDeployed }: SmartAccountSetupP
               {txPending ? "Waiting for confirmation..." : isDeploying ? "Submitting..." : "Deploy Smart Account"}
             </button>
             {deployMsg && (
-              <p className={`text-[10px] mt-1.5 ${deployMsg.includes("failed") ? "text-red-500" : deployMsg.includes("Deployed") ? "text-[#2F795A]" : "text-amber-600"}`}>
+              <p className={`text-[10px] mt-1.5 ${
+                deployMsg.includes("failed") ? "text-red-500"
+                : deployMsg.includes("Deployed") ? "text-[#2F795A]"
+                : "text-amber-600"
+              }`}>
                 {deployMsg}
               </p>
             )}
+          </div>
+        )}
+
+        {isDeployed && (
+          <div className="mt-2 text-[10px] text-[#2F795A]">
+            Smart Account is deployed and ready. Fund it below to start chatting.
           </div>
         )}
       </div>
