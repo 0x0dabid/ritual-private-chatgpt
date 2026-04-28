@@ -71,8 +71,8 @@ export function SessionManager({
         </button>
 
         <p className="text-[10px] text-black/30 leading-relaxed">
-          Session keys are ephemeral and stored in browser memory only.
-          Closing the tab automatically clears the session.
+          Session key is stored in your browser (localStorage). It persists across
+          refreshes and redeploys. Click &quot;Revoke Session&quot; above to clear it.
         </p>
       </div>
     </div>

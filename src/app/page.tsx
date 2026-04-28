@@ -13,19 +13,27 @@ import { SessionManager } from "@/components/SessionManager";
 import { FundingSection } from "@/components/FundingSection";
 import { Settings } from "@/components/Settings";
 import { ExecutorDebugPanel } from "@/components/ExecutorDebugPanel";
+import { VerifySetup } from "@/components/VerifySetup";
 import { useSessionKey } from "@/hooks/useSessionKey";
 import { useExecutorDiscovery } from "@/hooks/useExecutorDiscovery";
-import { useSmartAccountInfo, useIsAuthorized } from "@/hooks/useSmartAccount";
+import { usePredictSmartAccount, useIsSmartAccountDeployed, useIsAuthorized } from "@/hooks/useSmartAccount";
 import type { AgentStatus } from "@/types/asyncTx";
 import type { AppSettings } from "@/types/agent";
 
 export default function Home() {
   const { address: userAddress, isConnected } = useAccount();
   const { sessionAddress, sessionAccount, previousSessionAddress, isNewSession } = useSessionKey();
-  const { debug } = useExecutorDiscovery();
+  const { executor, isLoading: executorLoading, debug } = useExecutorDiscovery();
+
+  const { predictedAddress } = usePredictSmartAccount(userAddress);
+  const { isDeployed: isSmartAccountDeployed } = useIsSmartAccountDeployed(userAddress);
+  const smartAccountAddress = isSmartAccountDeployed ? predictedAddress : undefined;
+  const { isAuthorized: isSessionActive } = useIsAuthorized(
+    smartAccountAddress,
+    sessionAddress ?? undefined,
+  );
 
   const [agentStatus, setAgentStatus] = useState<AgentStatus>("NO_AGENT");
-  const [smartAccountAddress, setSmartAccountAddress] = useState<Address | undefined>();
   const [agentDeployedAddress, setAgentDeployedAddress] = useState<`0x${string}` | undefined>();
   const [settings, setSettings] = useState<AppSettings>({
     provider: "ritual",
@@ -35,13 +43,9 @@ export default function Home() {
   const [sessionReady, setSessionReady] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
-  const { isAuthorized: isSessionActive } = useIsAuthorized(
-    smartAccountAddress,
-    sessionAddress ?? undefined,
-  );
-
   const handleSmartAccountDeployed = useCallback((addr: Address) => {
-    setSmartAccountAddress(addr);
+    // The parent state updates via the hook, but keep callback for side effects
+    setSessionReady(false);
   }, []);
 
   const handleSessionAuthorized = useCallback(() => {
@@ -92,43 +96,50 @@ export default function Home() {
               {/* Left: Setup + Funding */}
               <div className="lg:col-span-1 space-y-4">
                 <SmartAccountSetup
-                  smartAccountAddress={smartAccountAddress}
                   onSmartAccountDeployed={handleSmartAccountDeployed}
                   onSessionAuthorized={handleSessionAuthorized}
                 />
 
-                {smartAccountAddress && sessionReady && (
+                {isSmartAccountDeployed && sessionReady && (
                   <AgentSetup
                     agentStatus={agentStatus}
                     onAgentAddress={handleAgentCreated}
-                    smartAccountAddress={smartAccountAddress}
+                    smartAccountAddress={smartAccountAddress!}
                   />
                 )}
 
-                {smartAccountAddress && (
-                  <>
-                    <SessionManager
-                      smartAccountAddress={smartAccountAddress}
-                      onSessionRevoked={handleSessionRevoked}
-                    />
-                    <FundingSection
-                      sessionAddress={sessionAddress}
-                      previousSessionAddress={previousSessionAddress}
-                      isNewSession={isNewSession}
-                      smartAccountAddress={smartAccountAddress}
-                      ownerAddress={userAddress}
-                    />
-                  </>
+                {isSmartAccountDeployed && (
+                  <SessionManager
+                    smartAccountAddress={smartAccountAddress!}
+                    onSessionRevoked={handleSessionRevoked}
+                  />
                 )}
 
-                <AgentInfo
-                  agentAddress={agentDeployedAddress}
-                  agentStatus={agentStatus}
+                <FundingSection
+                  sessionAddress={sessionAddress}
+                  previousSessionAddress={previousSessionAddress}
+                  isNewSession={isNewSession}
                   smartAccountAddress={smartAccountAddress}
                   ownerAddress={userAddress}
-                  sessionAddress={sessionAddress}
-                  isSessionActive={isSessionActive}
                 />
+
+                <VerifySetup
+                  isSmartAccountDeployed={isSmartAccountDeployed ?? false}
+                  isSessionAuthorized={isSessionActive}
+                  sessionAddress={sessionAddress}
+                  executor={executor}
+                />
+
+                {smartAccountAddress && (
+                  <AgentInfo
+                    agentAddress={agentDeployedAddress}
+                    agentStatus={agentStatus}
+                    smartAccountAddress={smartAccountAddress}
+                    ownerAddress={userAddress}
+                    sessionAddress={sessionAddress}
+                    isSessionActive={isSessionActive}
+                  />
+                )}
 
                 {/* Advanced debug (collapsed by default) */}
                 <details className="text-xs">
@@ -150,6 +161,7 @@ export default function Home() {
                 <ChatPanel
                   agentStatus={agentStatus}
                   smartAccountAddress={smartAccountAddress}
+                  isSmartAccountDeployed={isSmartAccountDeployed ?? false}
                 />
               </div>
             </div>

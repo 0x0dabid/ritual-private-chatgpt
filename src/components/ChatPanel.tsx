@@ -4,19 +4,20 @@ import { useState, useRef, useEffect } from "react";
 import type { AgentStatus } from "@/types/asyncTx";
 import type { ChatMessage } from "@/types/agent";
 import type { Address, Hex } from "viem";
-import { keccak256, toHex } from "viem";
 import { useChatStore } from "@/stores/chatStore";
 import { useSessionKey } from "@/hooks/useSessionKey";
 import { useSessionKeyBalance } from "@/hooks/useSessionKeyBalance";
+import { useRitualWalletBalance } from "@/hooks/useRitualWallet";
 import { submitDirectLLM, submitViaSmartAccount } from "@/hooks/useLLMCall";
 import { useExecutorDiscovery } from "@/hooks/useExecutorDiscovery";
 
 interface ChatPanelProps {
   agentStatus: AgentStatus;
   smartAccountAddress?: Address;
+  isSmartAccountDeployed: boolean;
 }
 
-export function ChatPanel({ agentStatus, smartAccountAddress }: ChatPanelProps) {
+export function ChatPanel({ agentStatus, smartAccountAddress, isSmartAccountDeployed }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [showErrorDetail, setShowErrorDetail] = useState(false);
@@ -25,18 +26,52 @@ export function ChatPanel({ agentStatus, smartAccountAddress }: ChatPanelProps) 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { messages, addMessage, updateMessage } = useChatStore();
   const { sessionAccount } = useSessionKey();
-  const { hasBalance, refresh } = useSessionKeyBalance();
+  const { hasBalance: hasGas, refresh: refreshGas, balanceFormatted: gasFormatted } = useSessionKeyBalance();
+  const { balance: walletBalance, balanceFormatted: walletFormatted } = useRitualWalletBalance(
+    (llmMode === "smart-account" ? smartAccountAddress : null) ?? undefined,
+  );
   const { executor } = useExecutorDiscovery();
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const agentReady = agentStatus === "AGENT_RUNNING" || agentStatus === "AGENT_CREATED";
-  const canSend = agentReady && !!smartAccountAddress && !!sessionAccount && !!executor && hasBalance && !isSending;
+  // In Direct mode: session key sends directly to precompile 0x0802
+  // No SmartAccount needed. Only needs gas (not RitualWallet escrow).
+  // In SA mode: session key sends through SmartAccount.execute → 0x0802
+  const isDirectMode = llmMode === "direct" || !isSmartAccountDeployed;
+  const effectiveMode = isSmartAccountDeployed ? llmMode : "direct";
+
+  // Conditions for sending
+  const hasSession = !!sessionAccount;
+  const hasExecutor = !!executor;
+  const hasGasBalance = hasGas;
+
+  // In direct mode: doesn't need SmartAccount or RitualWallet escrow
+  // In SA mode: needs SmartAccount deployed + session authorized + has escrow
+  const saModeAvailable = isSmartAccountDeployed;
+  const saModeReady = saModeAvailable; // Would need isSessionAuthorized here
+
+  const canSendDirect = hasSession && hasExecutor && hasGasBalance && !isSending;
+  const canSendSA = hasSession && hasExecutor && hasGasBalance && !!smartAccountAddress && !isSending;
+  const canSend = isDirectMode ? canSendDirect : canSendSA;
+
+  // Block reasons
+  const blockedBySession = !hasSession;
+  const blockedByExecutor = !hasExecutor;
+  const blockedByGas = !hasGasBalance;
+  const blockedBySA = !isDirectMode && !smartAccountAddress;
+
+  const getBlockReason = (): string | null => {
+    if (blockedBySession) return "No session key. Refresh the page.";
+    if (blockedByExecutor) return "Discovering executor...";
+    if (blockedByGas) return "Session key needs native RITUAL for gas.";
+    if (blockedBySA) return "SmartAccount not deployed. Switch to Direct mode or deploy first.";
+    return null;
+  };
 
   const handleSend = async () => {
-    if (!input.trim() || !canSend || !smartAccountAddress || !sessionAccount || !executor) return;
+    if (!input.trim() || !canSend || !sessionAccount || !executor) return;
 
     const promptText = input.trim();
     addMessage({ id: `msg-${Date.now()}`, role: "user", content: promptText, timestamp: Date.now() });
@@ -48,20 +83,22 @@ export function ChatPanel({ agentStatus, smartAccountAddress }: ChatPanelProps) 
     setErrorDetail("");
 
     try {
-      const messages = [
+      const msgs = [
         { role: "system", content: "You are a helpful AI assistant on Ritual Chain. Respond concisely and accurately." },
         { role: "user", content: promptText },
       ];
 
       let response;
-      if (llmMode === "direct") {
+      if (isDirectMode) {
         response = await submitDirectLLM(sessionAccount, {
-          executor: executor.teeAddress, messages, model: "zai-org/GLM-4.7-FP8", temperature: 0.7, maxTokens: 4096, ttl: 300n,
+          executor: executor.teeAddress, messages: msgs, model: "zai-org/GLM-4.7-FP8", temperature: 0.7, maxTokens: 4096, ttl: 300n,
+        });
+      } else if (smartAccountAddress) {
+        response = await submitViaSmartAccount(sessionAccount, smartAccountAddress, {
+          executor: executor.teeAddress, messages: msgs, model: "zai-org/GLM-4.7-FP8", temperature: 0.7, maxTokens: 4096, ttl: 300n,
         });
       } else {
-        response = await submitViaSmartAccount(sessionAccount, smartAccountAddress, {
-          executor: executor.teeAddress, messages, model: "zai-org/GLM-4.7-FP8", temperature: 0.7, maxTokens: 4096, ttl: 300n,
-        });
+        throw new Error("SmartAccount not available");
       }
 
       if (!response.response.hasError && response.response.content) {
@@ -84,8 +121,8 @@ export function ChatPanel({ agentStatus, smartAccountAddress }: ChatPanelProps) 
     }
   };
 
-  const needsGas = agentReady && !!smartAccountAddress && !!sessionAccount && !!executor && !hasBalance;
-  const needsSetup = !agentReady || !smartAccountAddress || !sessionAccount || !executor;
+  const blockReason = getBlockReason();
+  const placeholderText = blockReason || "Type a message...";
 
   return (
     <div className="bg-white/60 backdrop-blur-sm rounded-2xl shadow-sm border border-black/5 flex flex-col h-[550px]">
@@ -93,29 +130,30 @@ export function ChatPanel({ agentStatus, smartAccountAddress }: ChatPanelProps) 
       <div className="px-5 py-3 border-b border-black/5 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-semibold text-black">Chat</h3>
-          {executor && (
-            <div className="flex items-center gap-1 px-1.5 py-0.5 bg-[#2F795A]/10 rounded text-[10px] text-[#2F795A]">
-              <div className="w-1 h-1 rounded-full bg-[#2F795A]" />
-              LLM ready
-            </div>
-          )}
+          <div className="flex items-center gap-1.5">
+            <div className={`w-1.5 h-1.5 rounded-full ${executor ? "bg-[#2F795A]" : "bg-black/20"}`} />
+            <span className="text-[10px] text-black/40">{executor ? "Connected" : "Connecting..."}</span>
+          </div>
         </div>
         <div className="flex items-center gap-2">
-          {executor && (
+          {executor && saModeAvailable && (
             <label className="flex items-center gap-1 text-[10px] text-black/40 cursor-pointer">
-              <span className={llmMode === "direct" ? "text-[#2F795A] font-medium" : ""}>Direct</span>
+              <span className={effectiveMode === "direct" ? "text-[#2F795A] font-medium" : ""}>Direct</span>
               <button
-                onClick={() => setLlmMode(llmMode === "direct" ? "smart-account" : "direct")}
+                onClick={() => setLlmMode(effectiveMode === "direct" ? "smart-account" : "direct")}
                 className={`relative w-7 h-3.5 rounded-full transition-colors ${
-                  llmMode === "direct" ? "bg-[#2F795A]" : "bg-black/20"
+                  effectiveMode === "direct" ? "bg-[#2F795A]" : "bg-black/20"
                 }`}
               >
                 <div className={`absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white transition-transform ${
-                  llmMode === "direct" ? "translate-x-0.5" : "translate-x-3.5"
+                  effectiveMode === "direct" ? "translate-x-0.5" : "translate-x-3.5"
                 }`} />
               </button>
-              <span className={llmMode === "smart-account" ? "text-[#2F795A] font-medium" : ""}>SA</span>
+              <span className={effectiveMode === "smart-account" ? "text-[#2F795A] font-medium" : ""}>SA</span>
             </label>
+          )}
+          {!saModeAvailable && (
+            <span className="text-[10px] text-black/30">Direct mode (no SA)</span>
           )}
           {isSending && (
             <div className="flex items-center gap-1.5 text-xs text-amber-600">
@@ -129,6 +167,15 @@ export function ChatPanel({ agentStatus, smartAccountAddress }: ChatPanelProps) 
         </div>
       </div>
 
+      {/* Mode indicator */}
+      <div className="px-5 py-1 bg-white/30 border-b border-black/5">
+        <span className="text-[9px] text-black/30">
+          {isDirectMode
+            ? "Direct LLM: session key → precompile 0x0802 (no SmartAccount)"
+            : `SmartAccount LLM: session key → SmartAccount → precompile 0x0802`}
+        </span>
+      </div>
+
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.length === 0 && (
@@ -137,6 +184,11 @@ export function ChatPanel({ agentStatus, smartAccountAddress }: ChatPanelProps) 
             <p className="text-black/40 text-sm">
               Simple text-only AI chat powered by Ritual Testnet agents.
             </p>
+            {!blockReason && (
+              <p className="text-[11px] text-black/30 mt-2">
+                Session key sends transactions directly to LLM precompile 0x0802. No SmartAccount needed.
+              </p>
+            )}
           </div>
         )}
         {messages.map((msg) => (
@@ -175,13 +227,22 @@ export function ChatPanel({ agentStatus, smartAccountAddress }: ChatPanelProps) 
         )}
       </div>
 
-      <div className="px-4 py-1.5 text-[10px] text-black/30 border-t border-black/5 bg-white/40 text-center">
-        Only prompt hashes are stored onchain. Full messages stay local.
-      </div>
-
-      {needsGas && (
+      {/* Funding warning */}
+      {blockedByGas && (
         <div className="px-4 py-1.5 text-[10px] text-amber-600 bg-amber-50 border-t border-amber-100 text-center">
-          Your session key needs native RITUAL for gas. Use the Funding section to send some.
+          Session key has {gasFormatted.toFixed(4)} RITUAL. Fund with at least 0.01 RITUAL for gas.
+        </div>
+      )}
+
+      {!blockedByGas && hasSession && effectiveMode === "direct" && (
+        <div className="px-4 py-1.5 text-[10px] text-black/30 border-t border-black/5 bg-white/40 text-center">
+          Direct LLM mode — transactions are EIP-1559 calls to 0x0802 from session key
+        </div>
+      )}
+
+      {!blockedByGas && !isDirectMode && smartAccountAddress && (
+        <div className="px-4 py-1.5 text-[10px] text-black/30 border-t border-black/5 bg-white/40 text-center">
+          SmartAccount mode — session key → SmartAccount.execute() → 0x0802
         </div>
       )}
 
@@ -192,20 +253,20 @@ export function ChatPanel({ agentStatus, smartAccountAddress }: ChatPanelProps) 
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && canSend && handleSend()}
-            placeholder={needsSetup ? "Set up your agent first..." : needsGas ? "Fund gas first..." : "Type a message..."}
-            disabled={!canSend && needsSetup}
-            className="flex-1 px-4 py-2.5 bg-white/80 border border-black/10 rounded-xl text-sm text-black 
+            placeholder={placeholderText}
+            disabled={!!blockReason && !blockedByGas}
+            className="flex-1 px-4 py-2.5 bg-white/80 border border-black/10 rounded-xl text-sm text-black
                        placeholder:text-black/30 focus:outline-none focus:border-[#2F795A]/40
                        disabled:opacity-40 disabled:cursor-not-allowed"
           />
           <button
             onClick={handleSend}
             disabled={!canSend}
-            className="px-4 py-2.5 bg-[#2F795A] text-white rounded-xl text-sm font-medium 
+            className="px-4 py-2.5 bg-[#2F795A] text-white rounded-xl text-sm font-medium
                        hover:bg-[#256F4E] transition-colors disabled:opacity-40 disabled:cursor-not-allowed
                        flex items-center gap-1.5"
           >
-            {needsGas ? "Fund Gas First" : "Send Message"}
+            {blockedByGas ? "Fund Gas First" : "Send"}
           </button>
         </div>
       </div>
