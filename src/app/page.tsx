@@ -29,7 +29,10 @@ export default function Home() {
       <header className="border-b border-black/5 bg-white/40 backdrop-blur-sm">
         <div className="max-w-6xl mx-auto px-5 py-3 flex items-center justify-between">
           <h1 className="text-lg font-semibold text-black tracking-tight">Ritual Private ChatGPT</h1>
-          <WalletConnect />
+          <div className="flex items-center gap-3">
+            <span className="text-[9px] text-black/20">v2-sa-only</span>
+            <WalletConnect />
+          </div>
         </div>
       </header>
 
