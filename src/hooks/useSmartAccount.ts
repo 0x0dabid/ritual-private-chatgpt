@@ -22,6 +22,7 @@ export function useDeploySmartAccount() {
       address: SMART_ACCOUNT_FACTORY,
       abi: smartAccountFactoryAbi,
       functionName: "deploy",
+      gas: 1_000_000n,
     });
     return hash;
   }, [address, writeContractAsync]);
