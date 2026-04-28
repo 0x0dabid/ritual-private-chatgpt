@@ -132,6 +132,11 @@ export function FundingSection({ sessionAddress }: FundingSectionProps) {
         <p className="text-[10px] text-black/30 mt-1">
           Used for executor fees, not gas. Deposit is for the session key address via depositFor().
         </p>
+        <div className="mt-2 text-[9px] text-black/30 font-mono space-y-0.5">
+          <div>balanceOf target: {sessionShort}</div>
+          <div>depositFor beneficiary: {sessionShort}</div>
+          <div>raw balance: {walletBalance.toString()} wei</div>
+        </div>
       </div>
     </div>
   );
