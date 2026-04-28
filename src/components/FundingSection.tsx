@@ -161,6 +161,9 @@ export function FundingSection({
           </div>
         </div>
         <p className="text-[10px] text-black/30">
+          Deposit beneficiary: <span className="font-mono text-black/60">{short(sessionAddress)}</span>
+        </p>
+        <p className="text-[10px] text-black/30">
           Checked via RitualWallet.balanceOf(sessionKey)
         </p>
         <p className="text-[10px] font-mono text-black/30">
@@ -186,6 +189,9 @@ export function FundingSection({
             {isDepositing ? "Depositing..." : "Deposit to RitualWallet"}
           </button>
         </div>
+        <p className="text-[10px] text-black/30 mt-0.5">
+          Deposits are credited to the session key via depositFor().
+        </p>
       </div>
 
       {/* Owner EOA and Smart Account addresses (info only) */}
