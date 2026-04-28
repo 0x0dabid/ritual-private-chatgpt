@@ -21,7 +21,7 @@ import type { AppSettings } from "@/types/agent";
 
 export default function Home() {
   const { address: userAddress, isConnected } = useAccount();
-  const { sessionAddress, sessionAccount } = useSessionKey();
+  const { sessionAddress, sessionAccount, previousSessionAddress, isNewSession } = useSessionKey();
   const { debug } = useExecutorDiscovery();
 
   const [agentStatus, setAgentStatus] = useState<AgentStatus>("NO_AGENT");
@@ -113,6 +113,10 @@ export default function Home() {
                     />
                     <FundingSection
                       sessionAddress={sessionAddress}
+                      previousSessionAddress={previousSessionAddress}
+                      isNewSession={isNewSession}
+                      smartAccountAddress={smartAccountAddress}
+                      ownerAddress={userAddress}
                     />
                   </>
                 )}

@@ -2,25 +2,49 @@
 
 import React, { useState } from "react";
 import { useAccount, useSendTransaction } from "wagmi";
-import { parseEther } from "viem";
+import { parseEther, type Address } from "viem";
 import { useSessionKeyBalance } from "@/hooks/useSessionKeyBalance";
 import { useRitualWalletDeposit, useRitualWalletBalance } from "@/hooks/useRitualWallet";
 
+const RITUAL_WALLET_ADDRESS = "0x532F0dF0896F353d8C3DD8cc134e8129DA2a3948" as const;
+
 interface FundingSectionProps {
   sessionAddress: `0x${string}` | null;
+  previousSessionAddress: `0x${string}` | null;
+  isNewSession: boolean;
+  smartAccountAddress: `0x${string}` | undefined;
+  ownerAddress: `0x${string}` | undefined;
 }
 
-export function FundingSection({ sessionAddress }: FundingSectionProps) {
+export function FundingSection({
+  sessionAddress,
+  previousSessionAddress,
+  isNewSession,
+  smartAccountAddress,
+  ownerAddress,
+}: FundingSectionProps) {
   const { address } = useAccount();
   const { sendTransactionAsync } = useSendTransaction();
   const [gasAmount, setGasAmount] = useState("0.02");
   const [walletAmount, setWalletAmount] = useState("0.02");
   const [sending, setSending] = useState(false);
-  const { balanceFormatted: gasBalanceFormatted, hasBalance, refresh: refreshGas } = useSessionKeyBalance();
-  const { deposit, depositFor, isPending: isDepositing } = useRitualWalletDeposit();
-  const { balance: walletBalance, balanceFormatted: walletBalanceFormatted, refetch: refetchWallet } = useRitualWalletBalance(sessionAddress ?? undefined);
+  const {
+    balance: gasBalance,
+    balanceFormatted: gasBalanceFormatted,
+    hasBalance,
+    refresh: refreshGas,
+  } = useSessionKeyBalance();
+  const { depositFor, isPending: isDepositing } = useRitualWalletDeposit();
+  const {
+    balance: walletBalance,
+    balanceFormatted: walletBalanceFormatted,
+    refetch: refetchWallet,
+  } = useRitualWalletBalance(sessionAddress ?? undefined);
   // Also check owner EOA balance (from old deposit() calls before depositFor was added)
-  const { balance: ownerWalletBalance, balanceFormatted: ownerWalletFormatted } = useRitualWalletBalance(address ?? undefined);
+  const {
+    balance: ownerWalletBalance,
+    balanceFormatted: ownerWalletFormatted,
+  } = useRitualWalletBalance(ownerAddress ?? undefined);
   const [fundMsg, setFundMsg] = useState<string | null>(null);
 
   const handleFundGas = async () => {
@@ -51,27 +75,52 @@ export function FundingSection({ sessionAddress }: FundingSectionProps) {
     }
   };
 
-  const sessionShort = sessionAddress
-    ? `${sessionAddress.slice(0, 6)}...${sessionAddress.slice(-4)}`
-    : "—";
+  const short = (addr: `0x${string}` | null | undefined): string =>
+    addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : "—";
 
   return (
-    <div className="bg-white/60 backdrop-blur-sm rounded-2xl p-4 shadow-sm border border-black/5">
-      <h3 className="text-sm font-semibold text-black mb-3">Funding</h3>
+    <div className="bg-white/60 backdrop-blur-sm rounded-2xl p-4 shadow-sm border border-black/5 space-y-3">
+      {/* Section header */}
+      <h3 className="text-sm font-semibold text-black">Funding</h3>
 
-      {/* Session Key Gas */}
-      <div className="mb-3">
-        <div className="flex items-center justify-between mb-1.5">
-          <span className="text-xs text-black/50">Session Key Gas</span>
-          <span className="text-xs font-mono text-black">{sessionShort}</span>
+      {/* Session Key warning */}
+      {isNewSession && previousSessionAddress && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-3">
+          <p className="text-[11px] font-semibold text-red-600 mb-1">
+            ⚠️ New session key detected
+          </p>
+          <p className="text-[10px] text-red-500">
+            Previous gas/deposits belong to your old session key.
+            Previous session key: <span className="font-mono">{short(previousSessionAddress)}</span>
+          </p>
         </div>
-        <div className="flex items-center gap-1 mb-2">
-          <div className={`w-1.5 h-1.5 rounded-full ${hasBalance ? "bg-[#2F795A]" : "bg-red-400"}`} />
-          <span className="text-xs">
-            <span className="font-mono">{gasBalanceFormatted.toFixed(4)}</span>
-            <span className="text-black/50 ml-1">RITUAL</span>
-          </span>
+      )}
+
+      {/* Session Key address (shown once) */}
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-black/50 font-medium">Session Key</span>
+        <span className="text-xs font-mono text-black">{short(sessionAddress)}</span>
+      </div>
+
+      {/* Native Gas Balance */}
+      <div className="bg-white/40 rounded-xl p-3 space-y-1.5 border border-black/5">
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] font-semibold text-black/60">Native Gas Balance</span>
+          <div className="flex items-center gap-1">
+            <div
+              className={`w-1.5 h-1.5 rounded-full ${
+                hasBalance ? "bg-[#2F795A]" : "bg-red-400"
+              }`}
+            />
+            <span className="text-xs font-mono text-black">
+              {gasBalanceFormatted.toFixed(4)}
+            </span>
+            <span className="text-[10px] text-black/40">RITUAL</span>
+          </div>
         </div>
+        <p className="text-[10px] text-black/30">
+          Used to pay gas for session-key transactions.
+        </p>
         <div className="flex gap-2">
           <input
             type="number"
@@ -79,38 +128,44 @@ export function FundingSection({ sessionAddress }: FundingSectionProps) {
             onChange={(e) => setGasAmount(e.target.value)}
             min="0"
             step="0.01"
-            className="w-20 px-2 py-1.5 bg-white/80 border border-black/10 rounded-xl text-xs text-black 
+            className="w-20 px-2 py-1.5 bg-white/80 border border-black/10 rounded-xl text-xs text-black
                        placeholder:text-black/30 focus:outline-none focus:border-[#2F795A]/40
                        [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
           />
           <button
             onClick={handleFundGas}
             disabled={sending || !address || !sessionAddress}
-            className="px-3 py-1.5 bg-[#2F795A] text-white rounded-xl text-xs font-medium 
+            className="px-3 py-1.5 bg-[#2F795A] text-white rounded-xl text-xs font-medium
                        hover:bg-[#256F4E] transition-colors disabled:opacity-40 whitespace-nowrap"
           >
             {sending ? "Sending..." : "Fund Session Key Gas"}
           </button>
         </div>
-        <p className="text-[10px] text-black/30 mt-1">
-          This sends native RITUAL to your session key so it can pay gas.
-        </p>
-        {fundMsg && <p className="text-[10px] text-black/50 mt-1">{fundMsg}</p>}
+        {fundMsg && <p className="text-[10px] text-black/50">{fundMsg}</p>}
       </div>
 
-      {/* RitualWallet Deposit */}
-      <div className="pt-3 border-t border-black/5">
-        <div className="flex items-center justify-between mb-1.5">
-          <span className="text-xs text-black/50">RitualWallet Deposit</span>
-          <span className="text-xs font-mono text-black">{sessionShort}</span>
+      {/* RitualWallet Escrow */}
+      <div className="bg-white/40 rounded-xl p-3 space-y-1.5 border border-black/5">
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] font-semibold text-black/60">RitualWallet Escrow</span>
+          <div className="flex items-center gap-1">
+            <div
+              className={`w-1.5 h-1.5 rounded-full ${
+                walletBalance > 0n ? "bg-[#2F795A]" : "bg-black/20"
+              }`}
+            />
+            <span className="text-xs font-mono text-black">
+              {walletBalanceFormatted.toFixed(4)}
+            </span>
+            <span className="text-[10px] text-black/40">RITUAL</span>
+          </div>
         </div>
-        <div className="flex items-center gap-1 mb-2">
-          <div className={`w-1.5 h-1.5 rounded-full ${walletBalance > 0n ? "bg-[#2F795A]" : "bg-black/20"}`} />
-          <span className="text-xs">
-            <span className="font-mono">{walletBalanceFormatted.toFixed(4)}</span>
-            <span className="text-black/50 ml-1">RITUAL</span>
-          </span>
-        </div>
+        <p className="text-[10px] text-black/30">
+          Checked via RitualWallet.balanceOf(sessionKey)
+        </p>
+        <p className="text-[10px] font-mono text-black/30">
+          RitualWallet Contract: {short(RITUAL_WALLET_ADDRESS as `0x${string}`)}
+        </p>
         <div className="flex gap-2">
           <input
             type="number"
@@ -118,46 +173,50 @@ export function FundingSection({ sessionAddress }: FundingSectionProps) {
             onChange={(e) => setWalletAmount(e.target.value)}
             min="0"
             step="0.01"
-            className="w-20 px-2 py-1.5 bg-white/80 border border-black/10 rounded-xl text-xs text-black 
+            className="w-20 px-2 py-1.5 bg-white/80 border border-black/10 rounded-xl text-xs text-black
                        placeholder:text-black/30 focus:outline-none focus:border-[#2F795A]/40
                        [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
           />
           <button
             onClick={handleDeposit}
             disabled={isDepositing || !address}
-            className="px-3 py-1.5 bg-[#2F795A] text-white rounded-xl text-xs font-medium 
+            className="px-3 py-1.5 bg-[#2F795A] text-white rounded-xl text-xs font-medium
                        hover:bg-[#256F4E] transition-colors disabled:opacity-40 whitespace-nowrap"
           >
             {isDepositing ? "Depositing..." : "Deposit to RitualWallet"}
           </button>
         </div>
-        <p className="text-[10px] text-black/30 mt-1">
-          Used for executor fees, not gas. Deposit is for the session key address via depositFor().
-        </p>
-        <div className="mt-2 text-[9px] font-mono space-y-0.5">
-          <div className={sessionAddress && walletBalance === 0n && ownerWalletBalance > 0n ? "text-red-500" : "text-black/30"}>
-            Current Session Key: {sessionShort}
-          </div>
-          <div className={sessionAddress && walletBalance > 0n ? "text-[#2F795A]" : "text-red-500"}>
-            Last Deposit Beneficiary: {walletBalance > 0n ? sessionShort : "0x... (no deposit found for session key)"}
-          </div>
-          <div className="text-black/30">
-            RitualWallet balance checked for: {sessionShort}
-          </div>
-          {ownerWalletBalance > 0n && walletBalance === 0n && (
-            <div className="text-red-500">
-              ⚠️ Owner EOA has {ownerWalletFormatted.toFixed(4)} RITUAL in RitualWallet, but session key has 0.
-              Make a new deposit to fund the current session key.
-            </div>
-          )}
-          {walletBalance > 0n && (
-            <div className="text-[#2F795A]">
-              ✅ Session key has {walletBalanceFormatted.toFixed(4)} RITUAL in RitualWallet
-            </div>
-          )}
-          <div className="text-black/30">raw session key wei: {walletBalance.toString()}</div>
+      </div>
+
+      {/* Owner EOA and Smart Account addresses (info only) */}
+      <div className="bg-white/40 rounded-xl p-3 border border-black/5 space-y-1">
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] text-black/40">Owner EOA</span>
+          <span className="text-[10px] font-mono text-black/50">{short(ownerAddress)}</span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] text-black/40">Smart Account</span>
+          <span className="text-[10px] font-mono text-black/50">{short(smartAccountAddress)}</span>
         </div>
       </div>
+
+      {/* Mismatch warning */}
+      {ownerWalletBalance > 0n && walletBalance === 0n && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-3">
+          <p className="text-[11px] text-red-600">
+            ⚠️ Owner EOA has {ownerWalletFormatted.toFixed(4)} RITUAL in RitualWallet escrow,
+            but session key has 0. Make a new deposit to fund the current session key via depositFor().
+          </p>
+        </div>
+      )}
+
+      {walletBalance > 0n && (
+        <div className="bg-[#2F795A]/10 rounded-xl p-2 text-center">
+          <span className="text-[11px] font-medium text-[#2F795A]">
+            ✅ Session key has {walletBalanceFormatted.toFixed(4)} RITUAL in RitualWallet escrow
+          </span>
+        </div>
+      )}
     </div>
   );
 }
