@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import type { AppSettings } from "@/types/agent";
-import { useRitualWallet } from "@/hooks/useRitualWallet";
+import { useRitualWalletDeposit } from "@/hooks/useRitualWallet";
 
 interface SettingsProps {
   settings: AppSettings;
@@ -10,7 +10,7 @@ interface SettingsProps {
 }
 
 export function Settings({ settings, onSettingsChange }: SettingsProps) {
-  const { deposit, isPending } = useRitualWallet();
+  const { deposit, isPending } = useRitualWalletDeposit();
   const [depositAmount, setDepositAmount] = useState("0.5");
 
   const handleChange = (field: keyof AppSettings, value: string) => {

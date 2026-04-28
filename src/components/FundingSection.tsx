@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import { useAccount, useSendTransaction } from "wagmi";
 import { parseEther } from "viem";
 import { useSessionKeyBalance } from "@/hooks/useSessionKeyBalance";
-import { useRitualWallet } from "@/hooks/useRitualWallet";
+import { useRitualWalletDeposit, useRitualWalletBalance } from "@/hooks/useRitualWallet";
 
 interface FundingSectionProps {
   sessionAddress: `0x${string}` | null;
@@ -16,10 +16,10 @@ export function FundingSection({ sessionAddress }: FundingSectionProps) {
   const [gasAmount, setGasAmount] = useState("0.02");
   const [walletAmount, setWalletAmount] = useState("0.02");
   const [sending, setSending] = useState(false);
-  const { balanceFormatted, hasBalance, refresh } = useSessionKeyBalance();
-  const { deposit, isPending: isDepositing } = useRitualWallet();
+  const { balanceFormatted: gasBalanceFormatted, hasBalance, refresh: refreshGas } = useSessionKeyBalance();
+  const { deposit, depositFor, isPending: isDepositing } = useRitualWalletDeposit();
+  const { balance: walletBalance, balanceFormatted: walletBalanceFormatted, refetch: refetchWallet } = useRitualWalletBalance(sessionAddress ?? undefined);
   const [fundMsg, setFundMsg] = useState<string | null>(null);
-  const [depositMsg, setDepositMsg] = useState<string | null>(null);
 
   const handleFundGas = async () => {
     if (!address || !sessionAddress) return;
@@ -31,7 +31,7 @@ export function FundingSection({ sessionAddress }: FundingSectionProps) {
         value: parseEther(gasAmount),
       });
       setFundMsg(`Sent ${gasAmount} RITUAL. Tx: ${txHash.slice(0, 10)}...`);
-      setTimeout(refresh, 3000);
+      setTimeout(refreshGas, 3000);
     } catch (err: any) {
       setFundMsg(`Failed: ${err?.message || "unknown error"}`);
     } finally {
@@ -40,12 +40,12 @@ export function FundingSection({ sessionAddress }: FundingSectionProps) {
   };
 
   const handleDeposit = async () => {
-    setDepositMsg(null);
+    if (!sessionAddress) return;
     try {
-      await deposit(walletAmount, 5000n);
-      setDepositMsg(`Deposited ${walletAmount} RITUAL.`);
+      await depositFor(sessionAddress, walletAmount, 5000n);
+      setTimeout(refetchWallet, 3000);
     } catch (err: any) {
-      setDepositMsg(`Failed: ${err?.message || "unknown error"}`);
+      console.error("Deposit failed:", err);
     }
   };
 
@@ -66,7 +66,7 @@ export function FundingSection({ sessionAddress }: FundingSectionProps) {
         <div className="flex items-center gap-1 mb-2">
           <div className={`w-1.5 h-1.5 rounded-full ${hasBalance ? "bg-[#2F795A]" : "bg-red-400"}`} />
           <span className="text-xs">
-            <span className="font-mono">{balanceFormatted.toFixed(4)}</span>
+            <span className="font-mono">{gasBalanceFormatted.toFixed(4)}</span>
             <span className="text-black/50 ml-1">RITUAL</span>
           </span>
         </div>
@@ -98,7 +98,17 @@ export function FundingSection({ sessionAddress }: FundingSectionProps) {
 
       {/* RitualWallet Deposit */}
       <div className="pt-3 border-t border-black/5">
-        <span className="text-xs text-black/50 block mb-1.5">RitualWallet Deposit</span>
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-xs text-black/50">RitualWallet Deposit</span>
+          <span className="text-xs font-mono text-black">{sessionShort}</span>
+        </div>
+        <div className="flex items-center gap-1 mb-2">
+          <div className={`w-1.5 h-1.5 rounded-full ${walletBalance > 0n ? "bg-[#2F795A]" : "bg-black/20"}`} />
+          <span className="text-xs">
+            <span className="font-mono">{walletBalanceFormatted.toFixed(4)}</span>
+            <span className="text-black/50 ml-1">RITUAL</span>
+          </span>
+        </div>
         <div className="flex gap-2">
           <input
             type="number"
@@ -120,9 +130,8 @@ export function FundingSection({ sessionAddress }: FundingSectionProps) {
           </button>
         </div>
         <p className="text-[10px] text-black/30 mt-1">
-          Used for executor fees, not gas.
+          Used for executor fees, not gas. Deposit is for the session key address via depositFor().
         </p>
-        {depositMsg && <p className="text-[10px] text-black/50 mt-1">{depositMsg}</p>}
       </div>
     </div>
   );
