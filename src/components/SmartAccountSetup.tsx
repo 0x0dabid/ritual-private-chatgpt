@@ -3,30 +3,20 @@
 import React, { useState, useEffect } from "react";
 import type { Address } from "viem";
 import { useAccount } from "wagmi";
-import { usePredictSmartAccount, useIsSmartAccountDeployed, useDeploySmartAccount, useAddSessionKey, useIsAuthorized } from "@/hooks/useSmartAccount";
-import { useSessionKey } from "@/hooks/useSessionKey";
+import { usePredictSmartAccount, useIsSmartAccountDeployed, useDeploySmartAccount } from "@/hooks/useSmartAccount";
 
 interface SmartAccountSetupProps {
   onSmartAccountDeployed: (addr: Address) => void;
-  onSessionAuthorized: () => void;
 }
 
-export function SmartAccountSetup({
-  onSmartAccountDeployed,
-  onSessionAuthorized,
-}: SmartAccountSetupProps) {
+export function SmartAccountSetup({ onSmartAccountDeployed }: SmartAccountSetupProps) {
   const { address: userAddress, isConnected } = useAccount();
-  const { sessionAddress } = useSessionKey();
   const { predictedAddress } = usePredictSmartAccount(userAddress);
   const { isDeployed } = useIsSmartAccountDeployed(userAddress);
   const { deploy, isDeploying, deployedAddr, deployHash } = useDeploySmartAccount();
-  const { addSessionKey, isPending: isAddingSession } = useAddSessionKey(predictedAddress);
-  const { isAuthorized } = useIsAuthorized(predictedAddress, sessionAddress ?? undefined);
   const [deployMsg, setDeployMsg] = useState<string | null>(null);
-  const [authMsg, setAuthMsg] = useState<string | null>(null);
   const [txPending, setTxPending] = useState(false);
 
-  // When deploy tx hash appears, show pending state
   useEffect(() => {
     if (deployHash) {
       setTxPending(true);
@@ -34,16 +24,14 @@ export function SmartAccountSetup({
     }
   }, [deployHash]);
 
-  // When deployed address appears from event parsing or isDeployed flips, it's done
   useEffect(() => {
     if (deployedAddr) {
       setTxPending(false);
-      setDeployMsg(`Deployed at ${deployedAddr.slice(0, 10)}...${deployedAddr.slice(-6)}`);
+      setDeployMsg("Deployed!");
       onSmartAccountDeployed(deployedAddr);
     }
   }, [deployedAddr, onSmartAccountDeployed]);
 
-  // If isDeployed flips but deployedAddr wasn't caught by event parsing
   useEffect(() => {
     if (isDeployed && predictedAddress && !deployedAddr) {
       onSmartAccountDeployed(predictedAddress);
@@ -61,18 +49,6 @@ export function SmartAccountSetup({
     }
   };
 
-  const handleAuthorizeSession = async () => {
-    if (!predictedAddress || !sessionAddress) return;
-    setAuthMsg(null);
-    try {
-      await addSessionKey(sessionAddress);
-      onSessionAuthorized();
-      setAuthMsg("Session key authorized");
-    } catch (err: any) {
-      setAuthMsg(`Authorization failed: ${err?.message?.slice(0, 80) || "unknown error"}`);
-    }
-  };
-
   const short = (addr: Address | null | undefined) =>
     addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : "—";
 
@@ -85,49 +61,37 @@ export function SmartAccountSetup({
     );
   }
 
-  const loading = predictedAddress === undefined;
-
   return (
     <div className="bg-white/60 backdrop-blur-sm rounded-2xl p-4 shadow-sm border border-black/5 space-y-3">
       <h3 className="text-sm font-semibold text-black">Smart Account</h3>
 
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-black/50">Predicted Address</span>
-        <span className="text-xs font-mono text-black">
-          {loading ? "..." : short(predictedAddress)}
-        </span>
-      </div>
-
       <div className="bg-white/40 rounded-xl p-3 border border-black/5">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-[11px] font-semibold text-black/60">Deployment Status</span>
-          <span className={`text-[11px] font-medium flex items-center gap-1 ${
-            loading ? "text-black/30" : isDeployed ? "text-[#2F795A]" : "text-red-500"
-          }`}>
-            {loading ? "Loading..." : isDeployed ? (
-              <><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>Deployed</>
-            ) : txPending ? (
-              <span className="text-amber-600">Confirming...</span>
-            ) : "Not deployed"}
+          <span className="text-[11px] font-semibold text-black/60">Status</span>
+          <span className={`text-[11px] font-medium ${isDeployed ? "text-[#2F795A]" : "text-red-500"}`}>
+            {isDeployed ? "Deployed" : txPending ? "Confirming..." : "Not deployed"}
           </span>
         </div>
+        {predictedAddress && (
+          <div className="flex items-center justify-between text-[10px]">
+            <span className="text-black/40">Address (deterministic)</span>
+            <span className="font-mono text-black/60">{short(predictedAddress)}</span>
+          </div>
+        )}
 
-        {/* Always show deploy button when not deployed — regardless of loading state */}
         {!isDeployed && (
-          <div>
+          <div className="mt-3">
             <p className="text-[10px] text-black/40 mb-2">
-              Deploy a SmartAccount contract owned by your wallet
-              ({short(userAddress)}). This allows session-based execution.
+              Your permanent onchain wallet on Ritual. Deploy once — this is the wallet that
+              sends LLM transactions and holds the RitualWallet deposit.
             </p>
             <button
               onClick={handleDeploy}
-              disabled={isDeploying || txPending || loading}
+              disabled={isDeploying || txPending}
               className="w-full py-2 bg-[#2F795A] text-white rounded-xl text-xs font-medium
                          hover:bg-[#256F4E] transition-colors disabled:opacity-40"
             >
-              {loading ? "Loading factory address..." : txPending ? "Waiting for confirmation..." : isDeploying ? "Submitting..." : "Deploy Smart Account"}
+              {txPending ? "Waiting for confirmation..." : isDeploying ? "Submitting..." : "Deploy Smart Account"}
             </button>
             {deployMsg && (
               <p className={`text-[10px] mt-1.5 ${deployMsg.includes("failed") ? "text-red-500" : deployMsg.includes("Deployed") ? "text-[#2F795A]" : "text-amber-600"}`}>
@@ -136,54 +100,7 @@ export function SmartAccountSetup({
             )}
           </div>
         )}
-
-        {isDeployed && predictedAddress && (
-          <div className="text-[10px] text-black/40">
-            <p className="font-mono text-black/60 break-all">{predictedAddress}</p>
-          </div>
-        )}
       </div>
-
-      {/* Session Authorization — only when deployed */}
-      {isDeployed && predictedAddress && (
-        <div className="bg-white/40 rounded-xl p-3 border border-black/5">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] font-semibold text-black/60">Session Authorization</span>
-            <span className={`text-[11px] font-medium ${isAuthorized ? "text-[#2F795A]" : "text-amber-600"}`}>
-              {isAuthorized ? "Authorized" : "Not authorized"}
-            </span>
-          </div>
-
-          {!isAuthorized && sessionAddress && (
-            <div>
-              <p className="text-[10px] text-black/40 mb-2">
-                Authorize session key <span className="font-mono">{short(sessionAddress)}</span>
-              </p>
-              <button
-                onClick={handleAuthorizeSession}
-                disabled={isAddingSession}
-                className="w-full py-2 bg-[#2F795A] text-white rounded-xl text-xs font-medium
-                           hover:bg-[#256F4E] transition-colors disabled:opacity-40"
-              >
-                {isAddingSession ? "Authorizing..." : "Authorize Session Key"}
-              </button>
-              {authMsg && (
-                <p className={`text-[10px] mt-1.5 ${authMsg.includes("failed") ? "text-red-500" : "text-[#2F795A]"}`}>
-                  {authMsg}
-                </p>
-              )}
-            </div>
-          )}
-
-          {isAuthorized && (
-            <p className="text-[10px] text-black/40">Session key is authorized to execute through the SmartAccount.</p>
-          )}
-
-          {!sessionAddress && (
-            <p className="text-[10px] text-black/30">Session key not generated yet. Refresh the page.</p>
-          )}
-        </div>
-      )}
     </div>
   );
 }

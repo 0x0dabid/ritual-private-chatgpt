@@ -1,4 +1,4 @@
-import { createPublicClient, createWalletClient, http, encodeAbiParameters, decodeAbiParameters, parseAbiParameters, type Address, type Hex, type Account, type TransactionReceipt } from "viem";
+import { createPublicClient, http, encodeAbiParameters, decodeAbiParameters, parseAbiParameters, type Address, type Hex } from "viem";
 import { ritualChain } from "@/lib/chain";
 
 const LLM_PRECOMPILE = "0x0000000000000000000000000000000000000802" as const;
@@ -9,7 +9,7 @@ const publicClient = createPublicClient({
   transport: http(RPC_URL),
 });
 
-interface RitualReceipt extends TransactionReceipt {
+interface RitualReceipt extends Awaited<ReturnType<typeof publicClient.waitForTransactionReceipt>> {
   spcCalls?: Array<{ input: Hex; output: Hex }>;
 }
 
@@ -30,7 +30,7 @@ export interface LLMResponse {
   usage: { prompt: number; completion: number; total: number };
 }
 
-function encodeLLMRequest(req: LLMRequest): Hex {
+export function encodeLLMRequest(req: LLMRequest): Hex {
   const { executor, messages, model = "zai-org/GLM-4.7-FP8", temperature = 0.7, maxTokens = 4096, ttl = 300n } = req;
   return encodeAbiParameters(
     parseAbiParameters([
@@ -94,57 +94,16 @@ export function decodeLLMOutput(resultHex: Hex): LLMResponse {
   }
 }
 
-/// Path A — Direct LLM precompile call (session key → 0x0802)
-/// spcCalls are returned on the outer receipt.
-export async function submitDirectLLM(
-  sessionAccount: Account,
-  req: LLMRequest,
+/// Submit LLM call through SmartAccount.execute() — signed by the EOA owner.
+/// tx: EOA → SmartAccount.execute(0x0802, encodedLLMData)
+export async function submitLLM(
+  txHash: Hex,
+  wait: boolean,
 ): Promise<{ txHash: Hex; response: LLMResponse }> {
-  const walletClient = createWalletClient({
-    account: sessionAccount,
-    chain: ritualChain,
-    transport: http(RPC_URL),
-  });
-
-  const data = encodeLLMRequest(req);
-  const txHash = await walletClient.sendTransaction({
-    to: LLM_PRECOMPILE,
-    data,
-    gas: 3_000_000n,
-  });
-
   const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash }) as RitualReceipt;
 
   if (receipt.spcCalls && receipt.spcCalls.length > 0) {
     return { txHash, response: decodeLLMOutput(receipt.spcCalls[0].output) };
   }
-  return { txHash, response: { hasError: true, content: "", errorMessage: "Transaction confirmed, but Ritual did not return LLM output for this call path. Try direct LLM mode.", finishReason: "error", usage: { prompt: 0, completion: 0, total: 0 } } };
-}
-
-/// Path B — SmartAccount.execute wrapper (session key → SmartAccount → 0x0802)
-/// spcCalls may not propagate through contract calls.
-export async function submitViaSmartAccount(
-  sessionAccount: Account,
-  smartAccountAddress: Address,
-  req: LLMRequest,
-): Promise<{ txHash: Hex; response: LLMResponse }> {
-  const walletClient = createWalletClient({
-    account: sessionAccount,
-    chain: ritualChain,
-    transport: http(RPC_URL),
-  });
-
-  const llmData = encodeLLMRequest(req);
-  const txHash = await walletClient.sendTransaction({
-    to: smartAccountAddress,
-    data: encodeAbiParameters(parseAbiParameters("address, bytes"), [LLM_PRECOMPILE, llmData]),
-    gas: 3_000_000n,
-  });
-
-  const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash }) as RitualReceipt;
-
-  if (receipt.spcCalls && receipt.spcCalls.length > 0) {
-    return { txHash, response: decodeLLMOutput(receipt.spcCalls[0].output) };
-  }
-  return { txHash, response: { hasError: true, content: "", errorMessage: "Transaction confirmed, but Ritual did not return LLM output for this call path. Try direct LLM mode.", finishReason: "error", usage: { prompt: 0, completion: 0, total: 0 } } };
+  return { txHash, response: { hasError: true, content: "", errorMessage: "Transaction confirmed, but Ritual did not return LLM output via this call path.", finishReason: "error", usage: { prompt: 0, completion: 0, total: 0 } } };
 }

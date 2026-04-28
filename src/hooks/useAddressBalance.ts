@@ -1,7 +1,8 @@
+"use client";
+
 import { createPublicClient, http, type Address } from "viem";
 import { useEffect, useState, useCallback } from "react";
 import { ritualChain } from "@/lib/chain";
-import { useSessionKey } from "./useSessionKey";
 
 const RPC_URL = process.env.NEXT_PUBLIC_RITUAL_RPC_URL ?? "https://rpc.ritualfoundation.org";
 
@@ -10,8 +11,7 @@ const publicClient = createPublicClient({
   transport: http(RPC_URL),
 });
 
-export function useSessionKeyBalance() {
-  const { sessionAddress } = useSessionKey();
+export function useAddressBalance(walletAddress: Address | undefined) {
   const [balance, setBalance] = useState<bigint>(0n);
   const [loading, setLoading] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -19,12 +19,12 @@ export function useSessionKeyBalance() {
   const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
 
   useEffect(() => {
-    if (!sessionAddress) return;
+    if (!walletAddress) return;
     let cancelled = false;
     setLoading(true);
 
     publicClient
-      .getBalance({ address: sessionAddress as Address })
+      .getBalance({ address: walletAddress as Address })
       .then((b) => {
         if (!cancelled) setBalance(b);
       })
@@ -34,7 +34,7 @@ export function useSessionKeyBalance() {
       });
 
     return () => { cancelled = true; };
-  }, [sessionAddress, refreshKey]);
+  }, [walletAddress, refreshKey]);
 
   const balanceFormatted = Number(balance) / 1e18;
   const hasBalance = balance > 0n;
